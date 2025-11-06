@@ -18,7 +18,7 @@ export default function App() {
   const [input, setInput] = useState('');
   const [result, setResult] = useState('');
 
-  const isOperator = (ch) => ['/', '-', 'X', '÷', '*', '+'].includes(ch);
+  const isOperator = (ch) => ['/', '-', 'X', '÷', '*', '+', '%'].includes(ch);
 
   const append = (val) => {
     // typing clears previous computed result
@@ -40,7 +40,7 @@ export default function App() {
     // Handle decimal: prevent multiple decimals in the current number
     if (val === '.') {
       // find last operator to get current number
-      const m = input.match(/([^*/\-+÷X]*)$/);
+      const m = input.match(/([^*/\-+÷X%]*)$/);
       const current = m ? m[0] : input;
       if (current.includes('.')) return;
       // if current number is empty (user pressed '.' after operator), prefix with 0
@@ -61,15 +61,7 @@ export default function App() {
     setInput((s) => (s.length > 0 ? s.slice(0, -1) : ''));
   };
 
-  const handlePercent = () => {
-    // convert last number to percentage (divide by 100)
-    const match = input.match(/(\d+\.?\d*)$/);
-    if (!match) return;
-    const num = parseFloat(match[0]);
-    const replaced = (num / 100).toString();
-    setResult('');
-    setInput((s) => s.slice(0, -match[0].length) + replaced);
-  };
+  // '%' is now treated as a normal modulo operator (handled by append & evaluation)
 
   const toJsExpr = (expr) => expr.replace(/X/g, '*').replace(/÷/g, '/');
 
@@ -80,12 +72,21 @@ export default function App() {
     while (expr.length > 0 && isOperator(expr.slice(-1))) expr = expr.slice(0, -1);
     if (expr === '') return;
     const jsExpr = toJsExpr(expr);
+    const formatNumber = (n) => {
+      if (typeof n !== 'number' || Number.isNaN(n) || !Number.isFinite(n)) return '';
+      if (Number.isInteger(n)) return String(n);
+      let s = n.toFixed(10);
+      s = s.replace(/\.0+$|(?<=\.[0-9]*?)0+$/g, '');
+      s = s.replace(/\.$/, '');
+      return s;
+    };
+
     try {
       // eslint-disable-next-line no-new-func
-      const result = Function(`"use strict"; return (${jsExpr})`)();
-      if (typeof result === 'number' && !Number.isNaN(result) && Number.isFinite(result)) {
-        // keep the formula (input) as-is, show the answer in separate result area
-        setResult(Number.isInteger(result) ? String(result) : String(parseFloat(result.toFixed(10)).replace(/(?:\.0+|(?:(\.[0-9]*?)0+))$/,'$1')));
+      const r = Function(`"use strict"; return (${jsExpr})`)();
+      const formatted = formatNumber(r);
+      if (formatted !== '') {
+        setResult(formatted);
       } else {
         setResult('Error');
       }
@@ -97,8 +98,7 @@ export default function App() {
   const onPress = (label) => {
     if (label === 'Delete') return handleDelete();
     if (label === 'Answer') return handleAnswer();
-    if (label === '%') return handlePercent();
-    // forward other buttons
+    // forward other buttons (now '%' is a normal operator)
     append(label);
   };
 
@@ -109,14 +109,21 @@ export default function App() {
     while (e.length > 0 && isOperator(e.slice(-1))) e = e.slice(0, -1);
     if (e === '') return '';
     const jsExpr = toJsExpr(e);
+    const formatNumber = (n) => {
+      if (typeof n !== 'number' || Number.isNaN(n) || !Number.isFinite(n)) return '';
+      if (Number.isInteger(n)) return String(n);
+      // keep up to 10 decimal places, then trim trailing zeros
+      let s = n.toFixed(10);
+      s = s.replace(/\.0+$|(?<=\.[0-9]*?)0+$/g, '');
+      // if ends with a dot after trimming, remove it
+      s = s.replace(/\.$/, '');
+      return s;
+    };
+
     try {
       // eslint-disable-next-line no-new-func
       const r = Function(`"use strict"; return (${jsExpr})`)();
-      if (typeof r === 'number' && !Number.isNaN(r) && Number.isFinite(r)) {
-        // trim unnecessary decimals
-        return Number.isInteger(r) ? String(r) : String(parseFloat(r.toFixed(10)).replace(/(?:\.0+|(?:(\.[0-9]*?)0+))$/,'$1'));
-      }
-      return '';
+      return formatNumber(r);
     } catch (e) {
       return '';
     }
@@ -125,7 +132,7 @@ export default function App() {
   const formatForDisplay = (expr) => {
     if (!expr) return '0';
     // add spaces around operators and convert * and / to X and ÷ for display
-    return expr.replace(/\*/g, ' X ').replace(/\//g, ' ÷ ').replace(/([+\-X÷])/g, ' $1 ').replace(/\s+/g, ' ').trim();
+    return expr.replace(/\*/g, ' X ').replace(/\//g, ' ÷ ').replace(/([+\-X÷%])/g, ' $1 ').replace(/\s+/g, ' ').trim();
   };
 
   const preview = computePreview(input);
